@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jauge d'énergie matinale</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Outfit', sans-serif; background: #fafafa; color: #2C3E50; padding: 0; }
+  .container { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  .title { text-align: center; margin-bottom: 8px; }
+  .title h1 { font-size: 26px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .title p { font-size: 13px; color: #888; font-weight: 300; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin: 20px 0 24px; border-bottom: 2px solid #eee; }
+  .tab { flex: 1; text-align: center; padding: 12px 0; font-size: 15px; font-weight: 500; color: #aaa; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s ease; }
+  .tab:hover { color: #666; }
+  .tab.active { color: #1a1a2e; border-bottom-color: #1a1a2e; font-weight: 600; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Questionnaire styles */
+  .family-card { margin-bottom: 16px; background: #fff; border-radius: 14px; padding: 14px 16px; border: 2px solid transparent; transition: all 0.3s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .family-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .family-icon { font-size: 20px; }
+  .family-name { font-size: 15px; font-weight: 600; }
+  .family-badge { margin-left: auto; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+  .options { display: flex; flex-wrap: wrap; gap: 5px; }
+  .opt-btn { padding: 6px 12px; border-radius: 20px; border: none; font-size: 12px; font-family: 'Outfit', sans-serif; font-weight: 400; cursor: pointer; transition: all 0.2s ease; background: #f0f2f5; color: #555; }
+  .opt-btn:hover { transform: scale(1.03); }
+  .opt-btn.active { font-weight: 600; color: #fff; transform: scale(1.05); }
+  .actions { display: flex; gap: 10px; margin: 20px 0; }
+  .calc-btn { flex: 1; padding: 14px 24px; border-radius: 14px; border: none; font-size: 16px; font-family: 'Outfit', sans-serif; font-weight: 600; cursor: pointer; color: #fff; background: #ccc; transition: all 0.3s ease; }
+  .calc-btn.ready { background: #1a1a2e; cursor: pointer; }
+  .calc-btn:not(.ready) { cursor: not-allowed; }
+  .reset-btn { padding: 14px 20px; border-radius: 14px; border: 2px solid #ddd; font-size: 14px; font-family: 'Outfit', sans-serif; font-weight: 500; cursor: pointer; background: #fff; color: #888; display: none; }
+  .results { background: #fff; border-radius: 18px; padding: 24px 20px; display: none; margin-bottom: 16px; }
+  .gauge-value { text-align: center; font-size: 56px; font-weight: 700; line-height: 1; }
+  .gauge-subtitle { text-align: center; font-size: 13px; font-weight: 500; color: #888; margin-top: 4px; }
+  .gauge-bar-bg { height: 14px; background: #f0f2f5; border-radius: 10px; overflow: hidden; margin: 16px 0; }
+  .gauge-bar-fill { height: 100%; border-radius: 10px; transition: width 0.8s ease; }
+  .gauge-label { text-align: center; padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .section-title { font-size: 12px; font-weight: 600; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .detail-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+  .rec-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 13px; color: #555; }
+  .rec-arrow { font-weight: 600; flex-shrink: 0; }
+  .save-btn { width: 100%; padding: 14px; border-radius: 14px; border: none; font-size: 16px; font-family: 'Outfit', sans-serif; font-weight: 600; cursor: pointer; color: #fff; background: #2D936C; margin-top: 16px; transition: all 0.2s ease; }
+  .save-btn:hover { background: #247a59; }
+  .save-btn:disabled { background: #ccc; cursor: not-allowed; }
+  .save-msg { text-align: center; font-size: 13px; color: #2D936C; font-weight: 500; margin-top: 8px; display: none; }
+
+  /* Data tab styles */
+  .filter-bar { display: flex; gap: 6px; margin-bottom: 20px; }
+  .filter-btn { padding: 8px 16px; border-radius: 20px; border: 2px solid #eee; font-size: 13px; font-family: 'Outfit', sans-serif; font-weight: 500; cursor: pointer; background: #fff; color: #888; transition: all 0.2s ease; }
+  .filter-btn.active { border-color: #1a1a2e; color: #1a1a2e; font-weight: 600; }
+  .chart-container { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 20px; }
+  .history-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .history-table th { background: #1a1a2e; color: #fff; padding: 10px 14px; font-size: 13px; font-weight: 600; text-align: left; }
+  .history-table td { padding: 9px 14px; font-size: 13px; border-bottom: 1px solid #f0f2f5; }
+  .history-table tr:last-child td { border-bottom: none; }
+  .pct-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 12px; }
+  .no-data { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+  .nav-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .nav-btn { padding: 6px 14px; border-radius: 10px; border: 2px solid #eee; background: #fff; font-family: 'Outfit', sans-serif; font-size: 13px; cursor: pointer; color: #555; }
+  .nav-btn:hover { border-color: #1a1a2e; color: #1a1a2e; }
+  .nav-label { font-size: 15px; font-weight: 600; color: #1a1a2e; }
+  .delete-btn { background: none; border: none; cursor: pointer; font-size: 14px; color: #ccc; transition: color 0.2s; }
+  .delete-btn:hover { color: #E07A5F; }
+  .stats-row { display: flex; gap: 12px; margin-bottom: 20px; }
+  .stat-card { flex: 1; background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); text-align: center; }
+  .stat-value { font-size: 24px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #aaa; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="title">
+    <h1>Jauge d'énergie matinale</h1>
+    <p>Energy Accounting , suivi quotidien</p>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('questionnaire')">📋 Questionnaire</div>
+    <div class="tab" onclick="switchTab('data')">📊 Données</div>
+  </div>
+
+  <!-- TAB 1: Questionnaire -->
+  <div class="tab-content active" id="tab-questionnaire">
+    <div id="families"></div>
+    <div class="actions">
+      <button class="calc-btn" id="calcBtn" onclick="calculate()">0/6 familles sélectionnées</button>
+      <button class="reset-btn" id="resetBtn" onclick="resetAll()">Reset</button>
+    </div>
+    <div class="results" id="results">
+      <div class="gauge-value" id="gaugeValue">0%</div>
+      <div class="gauge-subtitle">Jauge de départ</div>
+      <div class="gauge-bar-bg"><div class="gauge-bar-fill" id="gaugeFill"></div></div>
+      <div class="gauge-label" id="gaugeLabel"></div>
+      <div class="section-title">Détail par famille</div>
+      <div id="detailRows"></div>
+      <div style="margin-top:16px" id="recsSection">
+        <div class="section-title">Recommandations du jour</div>
+        <div id="recsList"></div>
+      </div>
+      <div id="optimalMsg" style="display:none;text-align:center;font-size:14px;font-weight:500;"></div>
+      <button class="save-btn" id="saveBtn" onclick="saveEntry()">💾 Sauvegarder cette journée</button>
+      <div class="save-msg" id="saveMsg">✓ Sauvegardé !</div>
+    </div>
+  </div>
+
+  <!-- TAB 2: Data -->
+  <div class="tab-content" id="tab-data">
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="setFilter('week')">Semaine</button>
+      <button class="filter-btn" onclick="setFilter('month')">Mois</button>
+      <button class="filter-btn" onclick="setFilter('year')">Année</button>
+    </div>
+    <div class="nav-row">
+      <button class="nav-btn" onclick="navigate(-1)">← Précédent</button>
+      <span class="nav-label" id="navLabel"></span>
+      <button class="nav-btn" onclick="navigate(1)">Suivant →</button>
+    </div>
+    <div class="stats-row" id="statsRow"></div>
+    <div class="chart-container">
+      <canvas id="energyChart" height="200"></canvas>
+    </div>
+    <table class="history-table" id="historyTable">
+      <thead><tr><th>Date</th><th>Énergie</th><th></th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ===================== DATA =====================
+const families = [
+  { id:"sleep", name:"Sommeil", icon:"🌙", color:"#4A6FA5", options:[
+    {id:"s1",label:"9-10h",value:0},{id:"s2",label:"8-9h",value:-5},{id:"s3",label:"7-8h",value:-15},{id:"s4",label:"6-7h",value:-25},{id:"s5",label:"<6h",value:-50},{id:"s6",label:"Nuit blanche",value:-95}
+  ]},
+  { id:"body", name:"Corps", icon:"💪", color:"#E07A5F", options:[
+    {id:"b1",label:"Aucune douleur",value:0},{id:"b2",label:"Courbatures légères",value:-10},{id:"b3",label:"Courbatures fortes",value:-30},{id:"b4",label:"Épaule luxée",value:-15},{id:"b5",label:"Rhume / nez bouché",value:-30}
+  ]},
+  { id:"food", name:"Alimentation", icon:"🥗", color:"#81B29A", options:[
+    {id:"f1",label:"Repas équilibrés hier",value:0},{id:"f2",label:"1 repas mal équilibré",value:-10},{id:"f3",label:"2+ repas mal équilibrés",value:-20},{id:"f4",label:"Accumulation (vacances, restos...)",value:-30}
+  ]},
+  { id:"stress", name:"Stress & charge mentale", icon:"🧠", color:"#F2CC8F", options:[
+    {id:"st1",label:"Aucun stress particulier",value:0},{id:"st2",label:"Deadline ponctuelle (stimulant)",value:5},{id:"st3",label:"Deadlines chroniques",value:-30},{id:"st4",label:"Situation non résolue récente",value:-5},{id:"st5",label:"Situation non résolue >1 mois",value:-40},{id:"st6",label:"Admin en retard / deadline courte",value:-15}
+  ]},
+  { id:"sensory", name:"Environnement sensoriel", icon:"🌤️", color:"#9DB4C0", options:[
+    {id:"se1",label:"Soleil, calme",value:0},{id:"se2",label:"Beau + vent froid",value:-5},{id:"se3",label:"Nuageux (1 jour)",value:-5},{id:"se4",label:"Nuageux (plusieurs jours)",value:-30},{id:"se5",label:"Maussade/pluie (début semaine)",value:-15},{id:"se6",label:"Maussade/pluie (fin semaine)",value:-50},{id:"se7",label:"Réveil par bruit subi",value:-5}
+  ]},
+  { id:"social", name:"Social & récupération", icon:"👥", color:"#D4A5A5", options:[
+    {id:"so1",label:"Récupération suffisante",value:0},{id:"so2",label:"Social hier sans récup",value:-20},{id:"so3",label:"Plusieurs jours sociaux d'affilée",value:-40},{id:"so4",label:"Accumulation semaine (lun-mar)",value:-5},{id:"so5",label:"Accumulation semaine (mer-jeu)",value:-15},{id:"so6",label:"Accumulation semaine (vendredi)",value:-25},{id:"so7",label:"Accumulation >1 semaine sans pause",value:-50}
+  ]}
+];
+
+const selections = {};
+let currentGauge = null;
+let currentFilter = 'week';
+let navOffset = 0;
+let chartInstance = null;
+
+// ===================== STORAGE =====================
+function getData() {
+  try { return JSON.parse(localStorage.getItem('energyData') || '{}'); } catch(e) { return {}; }
+}
+function setData(d) { localStorage.setItem('energyData', JSON.stringify(d)); }
+function todayStr() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function formatDate(str) {
+  const days = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const months = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+  const d = new Date(str + 'T12:00:00');
+  return days[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+function shortDate(str) {
+  const d = new Date(str + 'T12:00:00');
+  const days = ['D','L','M','M','J','V','S'];
+  return days[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth()+1);
+}
+
+// ===================== TABS =====================
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelectorAll('.tab')[tab === 'questionnaire' ? 0 : 1].classList.add('active');
+  if (tab === 'data') { navOffset = 0; renderData(); }
+}
+
+// ===================== QUESTIONNAIRE =====================
+function render() {
+  const container = document.getElementById('families');
+  container.innerHTML = '';
+  families.forEach(f => {
+    const sel = selections[f.id];
+    const isSelected = sel !== undefined;
+    const card = document.createElement('div');
+    card.className = 'family-card';
+    if (isSelected) { card.style.boxShadow = '0 2px 12px ' + f.color + '30'; card.style.borderColor = f.color + '60'; }
+    const val = isSelected ? sel.value : null;
+    const badgeColor = val > 0 ? '#2D936C' : val === 0 ? '#888' : '#E07A5F';
+    const badgeBg = val > 0 ? '#2D936C15' : val === 0 ? '#88888815' : '#E07A5F15';
+    let badgeHtml = isSelected ? '<span class="family-badge" style="color:'+badgeColor+';background:'+badgeBg+'">'+(val>0?'+':'')+val+'%</span>' : '';
+    let optHtml = '';
+    f.options.forEach(o => {
+      const isActive = isSelected && sel.optId === o.id;
+      optHtml += '<button class="opt-btn'+(isActive?' active':'')+'" style="'+(isActive?'background:'+f.color:'')+'" onclick="selectOpt(\''+f.id+'\',\''+o.id+'\','+o.value+')">'+o.label+'</button>';
+    });
+    card.innerHTML = '<div class="family-header"><span class="family-icon">'+f.icon+'</span><span class="family-name" style="color:'+f.color+'">'+f.name+'</span>'+badgeHtml+'</div><div class="options">'+optHtml+'</div>';
+    container.appendChild(card);
+  });
+  const count = Object.keys(selections).length;
+  const btn = document.getElementById('calcBtn');
+  document.getElementById('resetBtn').style.display = count > 0 ? 'block' : 'none';
+  if (count === families.length) { btn.textContent = 'Calculer ma jauge'; btn.className = 'calc-btn ready'; }
+  else { btn.textContent = count + '/' + families.length + ' familles'; btn.className = 'calc-btn'; }
+}
+
+function selectOpt(fid, oid, val) {
+  selections[fid] = { optId: oid, value: val };
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('saveMsg').style.display = 'none';
+  render();
+}
+
+function getColor(v) {
+  if (v >= 80) return '#2D936C'; if (v >= 60) return '#81B29A'; if (v >= 40) return '#F2CC8F'; if (v >= 20) return '#E07A5F'; return '#C1292E';
+}
+function getLabel(v) {
+  if (v >= 80) return 'Excellent , journée optimale'; if (v >= 60) return 'Bon , quelques précautions'; if (v >= 40) return 'Attention , protéger l\'énergie'; if (v >= 20) return 'Alerte , essentiels uniquement'; return 'Critique , repos prioritaire';
+}
+
+function calculate() {
+  if (Object.keys(selections).length < families.length) return;
+  const total = Object.values(selections).reduce((s, sel) => s + sel.value, 0);
+  const gauge = Math.max(0, Math.min(100, 100 + total));
+  currentGauge = gauge;
+  const color = getColor(gauge);
+  document.getElementById('gaugeValue').textContent = gauge + '%';
+  document.getElementById('gaugeValue').style.color = color;
+  document.getElementById('gaugeFill').style.width = gauge + '%';
+  document.getElementById('gaugeFill').style.background = 'linear-gradient(90deg, '+color+'CC, '+color+')';
+  const label = document.getElementById('gaugeLabel');
+  label.textContent = getLabel(gauge); label.style.color = color; label.style.background = color + '12';
+  const detailDiv = document.getElementById('detailRows'); detailDiv.innerHTML = '';
+  families.forEach(f => {
+    const v = selections[f.id] ? selections[f.id].value : 0;
+    const vc = v > 0 ? '#2D936C' : v === 0 ? '#aaa' : '#E07A5F';
+    detailDiv.innerHTML += '<div class="detail-row"><span style="color:#555">'+f.icon+' '+f.name+'</span><span style="font-weight:600;color:'+vc+'">'+(v>0?'+':'')+v+'%</span></div>';
+  });
+  const recs = [];
+  const sleepVal = selections.sleep ? selections.sleep.value : 0;
+  const sensoryVal = selections.sensory ? selections.sensory.value : 0;
+  const stressVal = selections.stress ? selections.stress.value : 0;
+  if (gauge < 60) { recs.push('Protège ta soirée : lecture + cohérence cardiaque'); recs.push('Pas de sortie sociale aujourd\'hui'); }
+  if (gauge < 40) { recs.push('Réduis la journée de travail si possible'); recs.push('Sport léger uniquement'); recs.push('Coucher avancé de 30-60 min'); }
+  if (gauge < 20) { recs.push('Mode survie : sommeil et alimentation uniquement'); recs.push('Annule tout engagement social'); }
+  if (sleepVal <= -25) recs.push('Déficit de sommeil : sieste de 20 min');
+  if (sensoryVal <= -15) recs.push('Météo difficile : lampe Beurer TL85 (oct-fév)');
+  if (stressVal <= -15) recs.push('Stress élevé : cohérence cardiaque ce midi');
+  const recsSection = document.getElementById('recsSection');
+  const optimalMsg = document.getElementById('optimalMsg');
+  if (gauge >= 80) {
+    recsSection.style.display = 'none'; optimalMsg.style.display = 'block'; optimalMsg.style.color = '#2D936C';
+    optimalMsg.textContent = 'Journée optimale , tous les piliers accessibles.';
+  } else {
+    recsSection.style.display = 'block'; optimalMsg.style.display = 'none';
+    const recsList = document.getElementById('recsList'); recsList.innerHTML = '';
+    recs.forEach(r => { recsList.innerHTML += '<div class="rec-item"><span class="rec-arrow" style="color:'+color+'">→</span><span>'+r+'</span></div>'; });
+  }
+  // Check if already saved today
+  const data = getData();
+  const saveBtn = document.getElementById('saveBtn');
+  if (data[todayStr()]) {
+    saveBtn.textContent = '💾 Mettre à jour aujourd\'hui (' + todayStr() + ')';
+  } else {
+    saveBtn.textContent = '💾 Sauvegarder cette journée (' + todayStr() + ')';
+  }
+  saveBtn.disabled = false;
+  document.getElementById('saveMsg').style.display = 'none';
+  const results = document.getElementById('results');
+  results.style.display = 'block'; results.style.boxShadow = '0 4px 24px '+color+'30'; results.style.border = '2px solid '+color+'40';
+  results.scrollIntoView({behavior:'smooth'});
+}
+
+function saveEntry() {
+  if (currentGauge === null) return;
+  const data = getData();
+  const details = {};
+  families.forEach(f => { if (selections[f.id]) details[f.id] = selections[f.id].value; });
+  data[todayStr()] = { gauge: currentGauge, details: details };
+  setData(data);
+  document.getElementById('saveMsg').style.display = 'block';
+  document.getElementById('saveBtn').textContent = '✓ Sauvegardé !';
+  document.getElementById('saveBtn').disabled = true;
+}
+
+function resetAll() {
+  for (const k in selections) delete selections[k];
+  currentGauge = null;
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('saveMsg').style.display = 'none';
+  render();
+}
+
+// ===================== DATA TAB =====================
+function setFilter(f) {
+  currentFilter = f; navOffset = 0;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.filter-btn').forEach(b => { if (b.textContent.toLowerCase().includes(f === 'week' ? 'semaine' : f === 'month' ? 'mois' : 'année')) b.classList.add('active'); });
+  renderData();
+}
+
+function navigate(dir) { navOffset += dir; renderData(); }
+
+function getDateRange() {
+  const now = new Date();
+  let start, end, label;
+  if (currentFilter === 'week') {
+    const d = new Date(now); d.setDate(d.getDate() + navOffset * 7);
+    const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    start = new Date(d); start.setDate(diff); start.setHours(0,0,0,0);
+    end = new Date(start); end.setDate(start.getDate() + 6);
+    label = 'Semaine du ' + start.getDate() + '/' + (start.getMonth()+1) + ' au ' + end.getDate() + '/' + (end.getMonth()+1) + '/' + end.getFullYear();
+  } else if (currentFilter === 'month') {
+    const d = new Date(now.getFullYear(), now.getMonth() + navOffset, 1);
+    start = new Date(d.getFullYear(), d.getMonth(), 1);
+    end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const months = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    label = months[d.getMonth()] + ' ' + d.getFullYear();
+  } else {
+    const y = now.getFullYear() + navOffset;
+    start = new Date(y, 0, 1); end = new Date(y, 11, 31);
+    label = 'Année ' + y;
+  }
+  return { start, end, label };
+}
+
+function getDatesInRange(start, end) {
+  const dates = []; const d = new Date(start);
+  while (d <= end) {
+    dates.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'));
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+
+function renderData() {
+  const data = getData();
+  const { start, end, label } = getDateRange();
+  document.getElementById('navLabel').textContent = label;
+  const dates = getDatesInRange(start, end);
+  const values = dates.map(d => data[d] ? data[d].gauge : null);
+  const filled = values.filter(v => v !== null);
+  // Stats
+  const statsRow = document.getElementById('statsRow');
+  if (filled.length > 0) {
+    const avg = Math.round(filled.reduce((a,b) => a+b, 0) / filled.length);
+    const min = Math.min(...filled);
+    const max = Math.max(...filled);
+    const avgColor = getColor(avg);
+    statsRow.innerHTML = '<div class="stat-card"><div class="stat-value" style="color:'+avgColor+'">'+avg+'%</div><div class="stat-label">Moyenne</div></div>'
+      + '<div class="stat-card"><div class="stat-value" style="color:'+getColor(min)+'">'+min+'%</div><div class="stat-label">Min</div></div>'
+      + '<div class="stat-card"><div class="stat-value" style="color:'+getColor(max)+'">'+max+'%</div><div class="stat-label">Max</div></div>'
+      + '<div class="stat-card"><div class="stat-value" style="color:#1a1a2e">'+filled.length+'/'+dates.length+'</div><div class="stat-label">Jours remplis</div></div>';
+  } else {
+    statsRow.innerHTML = '';
+  }
+  // Chart
+  const chartLabels = dates.map(d => {
+    if (currentFilter === 'year') { const dt = new Date(d+'T12:00:00'); return dt.getDate() === 1 ? ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][dt.getMonth()] : ''; }
+    return shortDate(d);
+  });
+  const chartData = values.map(v => v !== null ? v : null);
+  if (chartInstance) chartInstance.destroy();
+  const ctx = document.getElementById('energyChart').getContext('2d');
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        label: 'Énergie %',
+        data: chartData,
+        borderColor: '#4A6FA5',
+        backgroundColor: '#4A6FA520',
+        borderWidth: 2.5,
+        pointBackgroundColor: chartData.map(v => v !== null ? getColor(v) : 'transparent'),
+        pointBorderColor: chartData.map(v => v !== null ? getColor(v) : 'transparent'),
+        pointRadius: currentFilter === 'year' ? 2 : 5,
+        pointHoverRadius: 7,
+        fill: true,
+        tension: 0.3,
+        spanGaps: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { min: 0, max: 100, ticks: { callback: v => v + '%', stepSize: 20 }, grid: { color: '#f0f2f5' } },
+        x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 11 } } }
+      }
+    }
+  });
+  // Table
+  const tbody = document.getElementById('historyBody'); tbody.innerHTML = '';
+  const reversedDates = [...dates].reverse();
+  if (filled.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="no-data">Aucune donnée pour cette période</td></tr>';
+    return;
+  }
+  reversedDates.forEach(d => {
+    const entry = data[d];
+    const tr = document.createElement('tr');
+    if (entry) {
+      const color = getColor(entry.gauge);
+      tr.innerHTML = '<td>'+formatDate(d)+'</td><td><span class="pct-badge" style="background:'+color+'18;color:'+color+'">'+entry.gauge+'%</span></td><td><button class="delete-btn" onclick="deleteEntry(\''+d+'\')" title="Supprimer">🗑</button></td>';
+    } else {
+      tr.innerHTML = '<td style="color:#ccc">'+formatDate(d)+'</td><td style="color:#ddd;font-size:16px;text-align:center">-</td><td></td>';
+    }
+    tbody.appendChild(tr);
+  });
+}
+
+function deleteEntry(date) {
+  if (!confirm('Supprimer l\'entrée du ' + formatDate(date) + ' ?')) return;
+  const data = getData();
+  delete data[date];
+  setData(data);
+  renderData();
+}
+
+// ===================== INIT =====================
+render();
+</script>
+</body>
+</html>
