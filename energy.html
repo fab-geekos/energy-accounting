@@ -3,87 +3,154 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Jauge d'énergie — Energy Accounting</title>
+<title>Jauge d'énergie, Energy Accounting</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%E2%9A%A1</text></svg>">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Outfit',sans-serif;background:#fafafa;color:#2C3E50;padding:0}
+
+/* ── DA COMMUNE ──────────────────────────────────────────────────────────────
+   Memes jetons que todo, capitalsquizz, citations-livres et voc_anglais.
+   Mode sombre = classe `dark` sur <body>
+<script>if(localStorage.getItem("energy_theme")==="dark")document.body.classList.add("dark");</script>, cle `energy_theme` dans localStorage,
+   clair par defaut, bouton rond en haut a droite.
+   ────────────────────────────────────────────────────────────────────────── */
+body{
+  --bg:#F4F6F9;--card:#ffffff;--hover:#F9FAFC;
+  --text:#2C3E50;--muted:#6b7280;--border:#E6EAF0;
+  /* Deux bleus : --accent remplit (du blanc dessus donne 5,1:1) et ne bouge pas
+     entre les modes ; --accent-text porte le texte et doit s'eclaircir la nuit,
+     ou #4A6FA5 ne donne plus que 3,7:1. */
+  --accent:#4A6FA5;--accent-text:#4A6FA5;--on-accent:#ffffff;
+  --success:#2D936C;--on-success:#ffffff;
+  --alert:#E07A5F;--red-strong:#D62828;
+  --warning:#F2CC8F;--warning-text:#8a5a10;
+  --radius:14px;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  /* Palette des categories : c'est de la DONNEE, pas de la chrome. Elle est
+     centralisee ici mais ne suit pas la grammaire des roles. */
+  --cat-vert:#81B29A;--cat-bleu:#9DB4C0;--cat-rose:#D4A5A5;--cat-mauve:#B8A9C9;
+}
+body.dark{
+  --bg:#0b1120;--card:#131b2e;--hover:#1a2438;
+  --text:#e2e8f0;--muted:#94a3b8;--border:#1e293b;
+  --accent-text:#7FA3D8;
+  --success:#6fb39d;--on-success:#0b1120;
+  --red-strong:#F26D6D;--warning-text:#d9a94e;
+  --shadow:0 1px 3px rgba(0,0,0,.4);
+}
+
+/* Barre haute : meme gabarit que dans les trois autres apps a barre.
+   Le titre est la seule serif de la page. `opsz` a 40 fait monter le contraste
+   de Newsreader. Le line-height explicite est obligatoire : sinon c'est la
+   fonte EMOJI qui fixe la hauteur de ligne et le titre descend. */
+.topbar{
+  position:sticky;top:0;z-index:10;padding:12px 20px;min-height:64px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--card);border-bottom:1px solid var(--border);
+}
+.brand{
+  font-family:'Newsreader',Georgia,serif;font-variation-settings:'opsz' 40;
+  font-size:1.15rem;font-weight:600;letter-spacing:.5px;line-height:1.3;
+  color:var(--accent-text);
+}
+.icon-btn{
+  display:grid;place-items:center;width:40px;height:40px;padding:0;flex-shrink:0;
+  background:var(--card);border:1px solid var(--border);border-radius:50%;
+  color:var(--text);font-size:18px;line-height:1;cursor:pointer;
+  box-shadow:var(--shadow);
+}
+.icon-btn:hover{background:var(--hover)}
+
+/* Piege connu : Chrome reste bloque sur l'ancienne couleur quand une propriete
+   transitionnee tire sa valeur d'une variable qui change au meme instant. Or
+   ces fichiers utilisent `transition: all` un peu partout. On coupe donc toutes
+   les transitions le temps de deux frames pendant la bascule : les survols
+   gardent leur douceur, le changement de theme est net. */
+.no-transition,.no-transition *{transition:none !important;animation:none !important}
+
+
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);line-height:1.5;padding:0}
 .container{max-width:720px;margin:0 auto;padding:20px 16px}
 .title{text-align:center;margin-bottom:6px}
-.title h1{font-size:24px;font-weight:700;color:#1a1a2e;letter-spacing:-0.5px;margin-bottom:3px}
-.title p{font-size:13px;color:#888;font-weight:300}
-.tabs{display:flex;gap:0;margin:16px 0 20px;border-bottom:2px solid #eee}
-.tab{flex:1;text-align:center;padding:11px 0;font-size:14px;font-weight:500;color:#aaa;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
-.tab:hover{color:#666}
-.tab.active{color:#1a1a2e;border-bottom-color:#1a1a2e;font-weight:600}
+.title h1{font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px;margin-bottom:3px}
+.title p{font-size:13px;color:var(--muted);font-weight:300}
+.tabs{display:flex;gap:0;margin:16px 0 20px;border-bottom:2px solid var(--border)}
+.tab{flex:1;text-align:center;padding:11px 0;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab:hover{color:var(--muted)}
+.tab.active{color:var(--text);border-bottom-color:var(--text);font-weight:600}
 .tab-content{display:none}.tab-content.active{display:block}
-.section-card{background:#fff;border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.section-header{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f0f2f5}
+.section-card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.section-header{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .section-icon{font-size:20px}
 .section-name{font-size:15px;font-weight:600}
 .section-total{margin-left:auto;font-size:13px;font-weight:600;padding:3px 10px;border-radius:20px}
 .items{display:flex;flex-direction:column;gap:4px}
 .item-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;cursor:pointer;transition:all .15s;user-select:none;flex-wrap:wrap}
-.item-row:hover{background:#f8f8fa}
-.item-row.checked{background:#f0f7ff}
-.item-check{width:20px;height:20px;border-radius:6px;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;font-size:12px;color:#fff}
+.item-row:hover{background:var(--hover)}
+.item-row.checked{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.item-check{width:20px;height:20px;border-radius:6px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;font-size:12px;color:var(--on-accent)}
 .item-row.checked .item-check{border-color:var(--accent);background:var(--accent)}
-.item-label{font-size:13px;color:#555;flex:1}
+.item-label{font-size:13px;color:var(--muted);flex:1}
 .item-value{font-size:12px;font-weight:600;padding:2px 8px;border-radius:12px}
 .item-multi{display:flex;align-items:center;gap:4px;margin-left:28px;margin-top:4px;width:100%}
-.multi-input{width:50px;padding:4px 8px;border-radius:8px;border:2px solid #ddd;font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;text-align:center;color:#1a1a2e;outline:none;transition:border-color .2s}
-.multi-input:focus{border-color:#4A6FA5}
-.multi-label{font-size:11px;color:#888}
+.multi-input{width:50px;padding:4px 8px;border-radius:8px;border:2px solid var(--border);font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;text-align:center;color:var(--text);outline:none;transition:border-color .2s}
+.multi-input:focus{border-color:var(--accent-text)}
+.multi-label{font-size:11px;color:var(--muted)}
 .multi-total{font-size:12px;font-weight:600;margin-left:auto;padding:2px 8px;border-radius:12px}
 .start-gauge{display:flex;align-items:center;gap:16px;padding:8px 0}
-.start-input{width:80px;padding:8px 12px;border-radius:10px;border:2px solid #eee;font-family:'Outfit',sans-serif;font-size:18px;font-weight:600;text-align:center;color:#1a1a2e;outline:none;transition:border-color .2s}
-.start-input:focus{border-color:#4A6FA5}
-.start-slider{flex:1;-webkit-appearance:none;height:8px;border-radius:4px;background:#e8ecf0;outline:none}
-.start-slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#4A6FA5;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.start-input{width:80px;padding:8px 12px;border-radius:10px;border:2px solid var(--border);font-family:'Outfit',sans-serif;font-size:18px;font-weight:600;text-align:center;color:var(--text);outline:none;transition:border-color .2s}
+.start-input:focus{border-color:var(--accent-text)}
+.start-slider{flex:1;-webkit-appearance:none;height:8px;border-radius:4px;background:var(--border);outline:none}
+.start-slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.15)}
 .calc-row{display:flex;gap:10px;margin:16px 0}
-.calc-btn{flex:1;padding:14px;border-radius:14px;border:none;font-size:15px;font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;color:#fff;background:#1a1a2e;transition:all .2s}
-.calc-btn:hover{background:#2a2a4e}
-.reset-btn{padding:14px 18px;border-radius:14px;border:2px solid #ddd;font-size:13px;font-family:'Outfit',sans-serif;font-weight:500;cursor:pointer;background:#fff;color:#888}
-.results{background:#fff;border-radius:18px;padding:24px 20px;display:none;margin-bottom:16px}
+.calc-btn{flex:1;padding:14px;border-radius:14px;border:none;font-size:15px;font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;color:var(--on-accent);background:var(--accent);transition:all .2s}
+.calc-btn:hover{background:var(--accent)}
+.reset-btn{padding:14px 18px;border-radius:14px;border:2px solid var(--border);font-size:13px;font-family:'Outfit',sans-serif;font-weight:500;cursor:pointer;background:var(--card);color:var(--muted)}
+.results{background:var(--card);border-radius:18px;padding:24px 20px;display:none;margin-bottom:16px}
 .gauge-value{text-align:center;font-size:56px;font-weight:700;line-height:1}
-.gauge-sub{text-align:center;font-size:13px;font-weight:500;color:#888;margin-top:4px}
-.bar-bg{height:14px;background:#f0f2f5;border-radius:10px;overflow:hidden;margin:16px 0}
+.gauge-sub{text-align:center;font-size:13px;font-weight:500;color:var(--muted);margin-top:4px}
+.bar-bg{height:14px;background:var(--border);border-radius:10px;overflow:hidden;margin:16px 0}
 .bar-fill{height:100%;border-radius:10px;transition:width .8s ease}
 .gauge-label{text-align:center;padding:10px 14px;border-radius:12px;font-size:14px;font-weight:500;margin-bottom:16px}
-.detail-title{font-size:12px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:16px}
-.detail-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
-.rec-item{display:flex;gap:8px;padding:4px 0;font-size:13px;color:#555}
+.detail-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:16px}
+.detail-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:13px}
+.rec-item{display:flex;gap:8px;padding:4px 0;font-size:13px;color:var(--muted)}
 .rec-arrow{font-weight:600;flex-shrink:0}
-.save-btn{width:100%;padding:14px;border-radius:14px;border:none;font-size:15px;font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;color:#fff;background:#2D936C;margin-top:16px;transition:all .2s}
-.save-btn:hover{background:#247a59}
-.save-btn:disabled{background:#ccc;cursor:not-allowed}
-.save-msg{text-align:center;font-size:13px;color:#2D936C;font-weight:500;margin-top:8px;display:none}
+.save-btn{width:100%;padding:14px;border-radius:14px;border:none;font-size:15px;font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;color:var(--on-accent);background:var(--success);margin-top:16px;transition:all .2s}
+.save-btn:hover{background:var(--success)}
+.save-btn:disabled{background:var(--border);cursor:not-allowed}
+.save-msg{text-align:center;font-size:13px;color:var(--success);font-weight:500;margin-top:8px;display:none}
 .filter-bar{display:flex;gap:6px;margin-bottom:16px}
-.filter-btn{padding:8px 16px;border-radius:20px;border:2px solid #eee;font-size:13px;font-family:'Outfit',sans-serif;font-weight:500;cursor:pointer;background:#fff;color:#888;transition:all .2s}
-.filter-btn.active{border-color:#1a1a2e;color:#1a1a2e;font-weight:600}
+.filter-btn{padding:8px 16px;border-radius:20px;border:2px solid var(--border);font-size:13px;font-family:'Outfit',sans-serif;font-weight:500;cursor:pointer;background:var(--card);color:var(--muted);transition:all .2s}
+.filter-btn.active{border-color:var(--text);color:var(--text);font-weight:600}
 .nav-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.nav-btn{padding:6px 14px;border-radius:10px;border:2px solid #eee;background:#fff;font-family:'Outfit',sans-serif;font-size:13px;cursor:pointer;color:#555}
-.nav-btn:hover{border-color:#1a1a2e;color:#1a1a2e}
-.nav-label{font-size:15px;font-weight:600;color:#1a1a2e}
+.nav-btn{padding:6px 14px;border-radius:10px;border:2px solid var(--border);background:var(--card);font-family:'Outfit',sans-serif;font-size:13px;cursor:pointer;color:var(--muted)}
+.nav-btn:hover{border-color:var(--text);color:var(--text)}
+.nav-label{font-size:15px;font-weight:600;color:var(--text)}
 .stats-row{display:flex;gap:10px;margin-bottom:16px}
-.stat-card{flex:1;background:#fff;border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);text-align:center}
+.stat-card{flex:1;background:var(--card);border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);text-align:center}
 .stat-value{font-size:22px;font-weight:700}
-.stat-label{font-size:10px;color:#aaa;font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-.chart-container{background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px}
-.history-table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.history-table th{background:#1a1a2e;color:#fff;padding:9px 14px;font-size:12px;font-weight:600;text-align:left}
-.history-table td{padding:8px 14px;font-size:13px;border-bottom:1px solid #f0f2f5}
+.stat-label{font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.chart-container{background:var(--card);border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px}
+.history-table{width:100%;border-collapse:collapse;background:var(--card);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.history-table th{background:var(--accent);color:var(--on-accent);padding:9px 14px;font-size:12px;font-weight:600;text-align:left}
+.history-table td{padding:8px 14px;font-size:13px;border-bottom:1px solid var(--border)}
 .pct-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-weight:600;font-size:12px}
-.del-btn{background:none;border:none;cursor:pointer;font-size:13px;color:#ccc;transition:color .2s}
-.del-btn:hover{color:#E07A5F}
-.no-data{text-align:center;padding:30px;color:#aaa;font-size:14px}
+.del-btn{background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted);transition:color .2s}
+.del-btn:hover{color:var(--alert)}
+.no-data{text-align:center;padding:30px;color:var(--muted);font-size:14px}
 </style>
 </head>
 <body>
 <div class="container">
-<div class="title"><h1>Jauge d'énergie</h1><p>Energy Accounting , suivi quotidien</p></div>
+<header class="topbar">
+  <span class="brand">⚡ Jauge d'énergie</span>
+  <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Changer de theme" title="Mode clair / sombre">🌙</button>
+</header>
 <div class="tabs">
 <div class="tab active" onclick="switchTab('quest')">📋 Questionnaire</div>
 <div class="tab" onclick="switchTab('data')">📊 Données</div>
@@ -91,11 +158,11 @@ body{font-family:'Outfit',sans-serif;background:#fafafa;color:#2C3E50;padding:0}
 
 <div class="tab-content active" id="tab-quest">
 <div class="section-card">
-<div class="section-header"><span class="section-icon">⚡</span><span class="section-name" style="color:#4A6FA5">Jauge de départ ce matin</span></div>
+<div class="section-header"><span class="section-icon">⚡</span><span class="section-name" style="color:var(--accent-text)">Jauge de départ ce matin</span></div>
 <div class="start-gauge">
 <input type="range" class="start-slider" id="startSlider" min="0" max="100" value="100" oninput="syncStart(this.value)">
 <input type="number" class="start-input" id="startInput" min="0" max="100" value="100" onchange="syncStart(this.value)">
-<span style="font-size:14px;font-weight:600;color:#888">%</span>
+<span style="font-size:14px;font-weight:600;color:var(--muted)">%</span>
 </div>
 </div>
 <div id="drainSections"></div>
@@ -184,7 +251,7 @@ const drains = [
 ];
 
 const recharges = [
-  {cat:"Repos et régulation",color:"#2D936C",icon:"🧘",items:[
+  {cat:"Repos et régulation",color:"var(--success)",icon:"🧘",items:[
     {id:"r1",label:"Sieste",value:15},
     {id:"r2",label:"Pièce sans bruit",value:12,multi:{unit:"heures",def:1}},
     {id:"r3",label:"Être seul",value:7,multi:{unit:"heures",def:1}},
@@ -229,6 +296,14 @@ let currentFilter = 'week';
 let navOffset = 0;
 let chartInst = null;
 
+/* Chart.js dessine sur un canvas : il ne comprend ni var() ni color-mix. On y
+   resout donc les jetons en valeurs reelles au moment du rendu, et on redessine
+   a chaque bascule de theme. Ailleurs (styles inline), var() suffit et suit le
+   theme tout seul. */
+function jeton(n){return getComputedStyle(document.body).getPropertyValue(n).trim()}
+function resoudre(c){const m=/^var\((--[\w-]+)\)$/.exec(c);return m?jeton(m[1]):c}
+
+
 // =================== HELPERS ===================
 function getAllItems(){return [...drains,...recharges].flatMap(c=>c.items)}
 function getItem(id){return getAllItems().find(i=>i.id===id)}
@@ -265,14 +340,14 @@ function renderSections(){
 function buildSection(cat){
   const totalVal=cat.items.reduce((s,it)=>s+getItemTotal(it),0);
   const hasChecked=cat.items.some(it=>checked[it.id]);
-  const tc=totalVal>0?'#2D936C':totalVal===0?'#aaa':'#E07A5F';
-  const tb=totalVal>0?'#2D936C15':totalVal===0?'#88888815':'#E07A5F15';
+  const tc=totalVal>0?'var(--success)':totalVal===0?'var(--muted)':'var(--alert)';
+  const tb=totalVal>0?'color-mix(in srgb,var(--success) 12%,transparent)':totalVal===0?'color-mix(in srgb,var(--muted) 12%,transparent)':'color-mix(in srgb,var(--alert) 12%,transparent)';
   const totalHtml=hasChecked?'<span class="section-total" style="color:'+tc+';background:'+tb+'">'+(totalVal>0?'+':'')+totalVal+'%</span>':'';
   let itemsHtml='';
   cat.items.forEach(it=>{
     const ic=!!checked[it.id];
-    const vc=it.value>0?'#2D936C':it.value===0?'#888':'#E07A5F';
-    const vb=it.value>0?'#2D936C15':it.value===0?'#88888815':'#E07A5F15';
+    const vc=it.value>0?'var(--success)':it.value===0?'var(--muted)':'var(--alert)';
+    const vb=it.value>0?'color-mix(in srgb,var(--success) 12%,transparent)':it.value===0?'color-mix(in srgb,var(--muted) 12%,transparent)':'color-mix(in srgb,var(--alert) 12%,transparent)';
     const unitLabel=it.multi?(' /'+it.multi.unit.slice(0,-1)):'';
     itemsHtml+='<div class="item-row'+(ic?' checked':'')+'" style="--accent:'+cat.color+'">';
     itemsHtml+='<div class="item-check" onclick="toggle(\''+it.id+'\')">'+(ic?'✓':'')+'</div>';
@@ -281,8 +356,8 @@ function buildSection(cat){
     if(ic && it.multi){
       const qty=quantities[it.id]||it.multi.def;
       const tot=it.value*qty;
-      const totC=tot>0?'#2D936C':tot===0?'#888':'#E07A5F';
-      const totB=tot>0?'#2D936C15':tot===0?'#88888815':'#E07A5F15';
+      const totC=tot>0?'var(--success)':tot===0?'var(--muted)':'var(--alert)';
+      const totB=tot>0?'color-mix(in srgb,var(--success) 12%,transparent)':tot===0?'color-mix(in srgb,var(--muted) 12%,transparent)':'color-mix(in srgb,var(--alert) 12%,transparent)';
       itemsHtml+='<div class="item-multi">';
       itemsHtml+='<input type="number" class="multi-input" value="'+qty+'" min="0" max="24" step="0.5" onclick="event.stopPropagation()" onchange="setQty(\''+it.id+'\',this.value)">';
       itemsHtml+='<span class="multi-label">'+it.multi.unit+'</span>';
@@ -310,7 +385,7 @@ function setQty(id,val){
 }
 
 // =================== CALCULATE ===================
-function getColor(v){if(v>=80)return'#2D936C';if(v>=60)return'#81B29A';if(v>=40)return'#F2CC8F';if(v>=20)return'#E07A5F';return'#C1292E'}
+function getColor(v){if(v>=80)return'var(--success)';if(v>=60)return'var(--cat-vert)';if(v>=40)return'var(--warning)';if(v>=20)return'var(--alert)';return'var(--red-strong)'}
 function getLabel(v){if(v>=80)return'Excellent , journée optimale';if(v>=60)return'Bon , quelques précautions';if(v>=40)return'Attention , protéger l\'énergie';if(v>=20)return'Alerte , essentiels uniquement';return'Critique , repos prioritaire'}
 
 function calculate(){
@@ -327,10 +402,10 @@ function calculate(){
   const lbl=document.getElementById('gaugeLabel');
   lbl.textContent=getLabel(gauge);lbl.style.color=color;lbl.style.background=color+'12';
   const sd=document.getElementById('summaryRows');sd.innerHTML='';
-  sd.innerHTML+='<div class="detail-row"><span style="color:#555">⚡ Jauge de départ</span><span style="font-weight:600;color:#4A6FA5">'+startGauge+'%</span></div>';
-  sd.innerHTML+='<div class="detail-row"><span style="color:#555">📉 Total drains</span><span style="font-weight:600;color:#E07A5F">'+totalDrains+'%</span></div>';
-  sd.innerHTML+='<div class="detail-row"><span style="color:#555">📈 Total recharges</span><span style="font-weight:600;color:#2D936C">'+(totalRecharges>0?'+':'')+totalRecharges+'%</span></div>';
-  sd.innerHTML+='<div class="detail-row" style="border-top:2px solid #eee;padding-top:8px;margin-top:4px"><span style="color:#1a1a2e;font-weight:600">Jauge finale</span><span style="font-weight:700;color:'+color+'">'+gauge+'%</span></div>';
+  sd.innerHTML+='<div class="detail-row"><span style="color:var(--muted)">⚡ Jauge de départ</span><span style="font-weight:600;color:var(--accent-text)">'+startGauge+'%</span></div>';
+  sd.innerHTML+='<div class="detail-row"><span style="color:var(--muted)">📉 Total drains</span><span style="font-weight:600;color:var(--alert)">'+totalDrains+'%</span></div>';
+  sd.innerHTML+='<div class="detail-row"><span style="color:var(--muted)">📈 Total recharges</span><span style="font-weight:600;color:var(--success)">'+(totalRecharges>0?'+':'')+totalRecharges+'%</span></div>';
+  sd.innerHTML+='<div class="detail-row" style="border-top:2px solid var(--border);padding-top:8px;margin-top:4px"><span style="color:var(--text);font-weight:600">Jauge finale</span><span style="font-weight:700;color:'+color+'">'+gauge+'%</span></div>';
   const recs=[];
   if(gauge<60){recs.push('Protège ta soirée : lecture + cohérence cardiaque');recs.push('Pas de sortie sociale')}
   if(gauge<40){recs.push('Réduis la journée de travail si possible');recs.push('Sport léger uniquement');recs.push('Coucher avancé de 30-60 min')}
@@ -338,7 +413,7 @@ function calculate(){
   if(startGauge<75)recs.push('Jauge de départ basse : sieste de 20 min si possible');
   if(checked.d30)recs.push('Exposition au bruit : écouteurs anti-bruit');
   const rb=document.getElementById('recsBlock');const om=document.getElementById('optMsg');
-  if(gauge>=80){rb.style.display='none';om.style.display='block';om.style.color='#2D936C';om.textContent='Journée optimale , tous les piliers accessibles.'}
+  if(gauge>=80){rb.style.display='none';om.style.display='block';om.style.color='var(--success)';om.textContent='Journée optimale , tous les piliers accessibles.'}
   else{rb.style.display='block';om.style.display='none';const rl=document.getElementById('recsList');rl.innerHTML='';recs.forEach(r=>{rl.innerHTML+='<div class="rec-item"><span class="rec-arrow" style="color:'+color+'">→</span><span>'+r+'</span></div>'})}
   const data=getData();const sb=document.getElementById('saveBtn');
   sb.textContent=data[todayStr()]?'💾 Mettre à jour ('+todayStr()+')':'💾 Sauvegarder ('+todayStr()+')';
@@ -403,7 +478,7 @@ function renderData(){
     sr.innerHTML='<div class="stat-card"><div class="stat-value" style="color:'+getColor(avg)+'">'+avg+'%</div><div class="stat-label">Moyenne</div></div>'
       +'<div class="stat-card"><div class="stat-value" style="color:'+getColor(Math.min(...filled))+'">'+Math.min(...filled)+'%</div><div class="stat-label">Min</div></div>'
       +'<div class="stat-card"><div class="stat-value" style="color:'+getColor(Math.max(...filled))+'">'+Math.max(...filled)+'%</div><div class="stat-label">Max</div></div>'
-      +'<div class="stat-card"><div class="stat-value" style="color:#1a1a2e">'+filled.length+'/'+dates.length+'</div><div class="stat-label">Remplis</div></div>';
+      +'<div class="stat-card"><div class="stat-value" style="color:var(--text)">'+filled.length+'/'+dates.length+'</div><div class="stat-label">Remplis</div></div>';
   }else{sr.innerHTML=''}
   const cl=dates.map(d=>{
     if(currentFilter==='year'){const dt=new Date(d+'T12:00:00');return dt.getDate()===1?['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][dt.getMonth()]:''}
@@ -411,13 +486,13 @@ function renderData(){
   });
   if(chartInst)chartInst.destroy();
   const ctx=document.getElementById('chart').getContext('2d');
-  chartInst=new Chart(ctx,{type:'line',data:{labels:cl,datasets:[{label:'Énergie %',data:values,borderColor:'#4A6FA5',backgroundColor:'#4A6FA520',borderWidth:2.5,pointBackgroundColor:values.map(v=>v!==null?getColor(v):'transparent'),pointBorderColor:values.map(v=>v!==null?getColor(v):'transparent'),pointRadius:currentFilter==='year'?2:5,pointHoverRadius:7,fill:true,tension:.3,spanGaps:false}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',stepSize:20},grid:{color:'#f0f2f5'}},x:{grid:{display:false},ticks:{maxRotation:45,font:{size:11}}}}}});
+  chartInst=new Chart(ctx,{type:'line',data:{labels:cl,datasets:[{label:'Énergie %',data:values,borderColor:jeton('--accent'),backgroundColor:jeton('--accent') + '26',borderWidth:2.5,pointBackgroundColor:values.map(v=>v!==null?resoudre(getColor(v)):'transparent'),pointBorderColor:values.map(v=>v!==null?resoudre(getColor(v)):'transparent'),pointRadius:currentFilter==='year'?2:5,pointHoverRadius:7,fill:true,tension:.3,spanGaps:false}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',stepSize:20},grid:{color:jeton('--border')},ticks:{color:jeton('--muted')}},x:{grid:{display:false},ticks:{maxRotation:45,font:{size:11},color:jeton('--muted')}}}}});
   const tb=document.getElementById('histBody');tb.innerHTML='';
   if(filled.length===0){tb.innerHTML='<tr><td colspan="3" class="no-data">Aucune donnée</td></tr>';return}
   [...dates].reverse().forEach(d=>{
     const e=data[d];const tr=document.createElement('tr');
     if(e){const c=getColor(e.gauge);tr.innerHTML='<td>'+fmtDate(d)+'</td><td><span class="pct-badge" style="background:'+c+'18;color:'+c+'">'+e.gauge+'%</span></td><td><button class="del-btn" onclick="delEntry(\''+d+'\')" title="Supprimer">🗑</button></td>'}
-    else{tr.innerHTML='<td style="color:#ccc">'+fmtDate(d)+'</td><td style="color:#ddd;text-align:center">-</td><td></td>'}
+    else{tr.innerHTML='<td style="color:var(--muted)">'+fmtDate(d)+'</td><td style="color:var(--muted);text-align:center">-</td><td></td>'}
     tb.appendChild(tr);
   });
 }
@@ -426,6 +501,27 @@ function delEntry(d){if(!confirm('Supprimer le '+fmtDate(d)+' ?'))return;const d
 
 // =================== INIT ===================
 renderSections();
+
+
+/* ── THEME CLAIR / SOMBRE ──
+   Meme convention que les quatre autres apps. */
+const THEME_KEY='energy_theme';
+function setTheme(dark){
+  document.body.classList.add('no-transition');
+  document.body.classList.toggle('dark',dark);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>
+    document.body.classList.remove('no-transition')));
+  const b=document.getElementById('themeToggle');
+  b.textContent=dark?'\u2600\ufe0f':'\ud83c\udf19';
+  b.title=dark?'Passer en mode clair':'Passer en mode sombre';
+  localStorage.setItem(THEME_KEY,dark?'dark':'light');
+  if(typeof repaintCharts==='function') repaintCharts();
+}
+/* On ne redessine que si un graphe existe deja : au chargement, setTheme
+   s'execute avant que l'onglet Donnees ait ete ouvert une seule fois. */
+function repaintCharts(){if(chartInst)renderData()}
+function toggleTheme(){setTheme(!document.body.classList.contains('dark'))}
+setTheme(localStorage.getItem(THEME_KEY)==='dark');
 </script>
 </body>
 </html>
