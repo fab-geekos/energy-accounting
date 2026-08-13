@@ -14,8 +14,7 @@
 
 /* ── DA COMMUNE ──────────────────────────────────────────────────────────────
    Memes jetons que todo, capitalsquizz, citations-livres et voc_anglais.
-   Mode sombre = classe `dark` sur <body>
-<script>if(localStorage.getItem("energy_theme")==="dark")document.body.classList.add("dark");</script>, cle `energy_theme` dans localStorage,
+   Mode sombre = classe `dark`, cle `energy_theme` dans localStorage,
    clair par defaut, bouton rond en haut a droite.
    ────────────────────────────────────────────────────────────────────────── */
 body{
@@ -74,7 +73,7 @@ body.dark{
 
 
   body { font-family: 'Outfit', sans-serif; background:var(--bg); color:var(--text); padding: 0; }
-  .container { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  .container { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
   .title { text-align: center; margin-bottom: 8px; }
   .title h1 { font-size: 26px; font-weight: 700; color:var(--text); letter-spacing: -0.5px; margin-bottom: 4px; }
   .title p { font-size: 13px; color:var(--muted); font-weight: 300; }
@@ -141,12 +140,13 @@ body.dark{
 </style>
 </head>
 <body>
-<div class="container">
-  <header class="topbar">
+<script>if(localStorage.getItem("energy_theme")==="dark")document.body.classList.add("dark");</script>
+<header class="topbar">
   <span class="brand">📝 Jauge d'énergie matinale</span>
-  <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Changer de theme" title="Mode clair / sombre">🌙</button>
+  <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Changer de thème" title="Mode clair / sombre">🌙</button>
 </header>
-
+<div class="container">
+  
   <div class="tabs">
     <div class="tab active" onclick="switchTab('questionnaire')">📋 Questionnaire</div>
     <div class="tab" onclick="switchTab('data')">📊 Données</div>
