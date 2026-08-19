@@ -1293,17 +1293,65 @@ function dImport(fichier){
       alert('Ce fichier ne contient pas de journées.'); return;
     }
 
+    /* ⚠️ TOUT CE QUI ENTRE PAR UN FICHIER EST SUSPECT, et pas seulement par
+       principe : la clé de date est réinjectée telle quelle dans l'attribut
+       `onclick` du bouton de suppression, plus bas dans `dRender`. Une clé
+       fabriquée contenant une apostrophe s'échapperait de la chaîne et ferait
+       exécuter ce qu'elle veut, dans une page où la session Firebase est
+       ouverte. C'est la seule surface par laquelle du texte étranger entre
+       dans cette app.
+       On ne nettoie donc pas, on RECONSTRUIT : seules les formes attendues
+       sont recopiées, tout le reste est ignoré. Une liste de ce qu'on accepte
+       vieillit mieux qu'une liste de ce qu'on refuse.
+       Bénéfice secondaire : un fichier simplement corrompu ne peut plus
+       introduire de valeurs aberrantes dans l'historique. */
+    /* La bonne forme ne suffit pas : `2026-13-99` passe le motif et ne
+       correspond à aucun jour. On exige donc que la date fasse l'aller-retour,
+       ce qui élimine d'un coup les mois et les quantièmes impossibles, et le
+       29 février des années non bissextiles. */
+    const dateValide = d => /^\d{4}-\d{2}-\d{2}$/.test(d) &&
+      !isNaN(new Date(d + 'T12:00:00')) &&
+      new Date(d + 'T12:00:00').toISOString().slice(0,10) === d;
+    const pourcent = v => (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.min(100, Math.round(v))) : null;
+
     const t = maintenant();
     const restaure = {};
+    let ignorees = 0;
+
     Object.keys(jours).forEach(d=>{
-      const src = jours[d] || {}, dest = {};
-      ['morning','day'].forEach(b=>{ if(src[b] && typeof src[b]==='object') dest[b] = { ...src[b], at:t }; });
-      if(dest.morning || dest.day) restaure[d] = dest;
+      if(!dateValide(d)){ ignorees++; return; }
+      const src = jours[d];
+      if(!src || typeof src !== 'object'){ ignorees++; return; }
+      const dest = {};
+
+      const m = src.morning, jg = pourcent(m && m.gauge);
+      if(jg !== null){
+        dest.morning = { gauge: jg, at: t };
+        /* Le détail par famille n'est repris que sur les identifiants connus,
+           et seulement en nombres. */
+        if(m.details && typeof m.details === 'object'){
+          const det = {};
+          families.forEach(f=>{ const v = pourcent(m.details[f.id]); if(v !== null) det[f.id] = m.details[f.id]; });
+          if(Object.keys(det).length) dest.morning.details = det;
+        }
+      }
+
+      const j = src.day, jd = pourcent(j && j.gauge);
+      if(jd !== null){
+        dest.day = { gauge: jd, at: t };
+        const s = pourcent(j.start);
+        if(s !== null) dest.day.start = s;
+      }
+
+      if(dest.morning || dest.day) restaure[d] = dest; else ignorees++;
     });
 
     const n = Object.keys(restaure).length;
     if(!n){ alert('Aucune journée exploitable dans ce fichier.'); return; }
-    if(!confirm(n + ' journée(s) vont être restaurées.\n\nElles prendront le pas sur ce qui existe, ici comme sur tes autres machines. Continuer ?')) return;
+
+    const avertissement = ignorees ? '\n\n' + ignorees + ' entrée(s) non conforme(s) seront ignorées.' : '';
+    if(!confirm(n + ' journée(s) vont être restaurées.' + avertissement +
+                '\n\nElles prendront le pas sur ce qui existe, ici comme sur tes autres machines. Continuer ?')) return;
 
     persist(mergeJours(getData(), restaure), true);
     dRender();
