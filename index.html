@@ -187,6 +187,10 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);line
 .del-btn{background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted);transition:color .2s}
 .del-btn:hover{color:var(--alert)}
 .no-data{text-align:center;padding:30px;color:var(--muted);font-size:14px}
+.backup{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.backup__btn{flex:1;min-width:150px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--muted);font-family:'Outfit',sans-serif;font-size:13px;font-weight:500;cursor:pointer}
+.backup__btn:hover{background:var(--hover);color:var(--text);border-color:var(--success);box-shadow:0 0 0 1px var(--success)}
+.backup__note{margin-top:8px;font-size:11px;color:var(--muted);text-align:center}
 
 /* ── Porte de connexion ─────────────────────────────────────────────────────
    Tant que Firebase n'a pas confirmé une session valide, l'app est masquée
@@ -335,6 +339,17 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);line
     <thead><tr><th>Date</th><th>Matin</th><th>Fin de journée</th><th></th></tr></thead>
     <tbody id="dHistBody"></tbody>
   </table>
+
+  <!-- Sauvegarde. Placée ici et non dans un menu de la barre haute : c'est
+       l'onglet des données, l'endroit où on pense à ses données. Deux boutons
+       nus valent mieux qu'un menu déroulant à écrire et à entretenir. -->
+  <div class="backup">
+    <button class="backup__btn" onclick="dExport()">⭳ Exporter (JSON)</button>
+    <button class="backup__btn" onclick="document.getElementById('dFile').click()">⭱ Restaurer</button>
+    <input type="file" id="dFile" accept="application/json,.json" hidden
+           onchange="dImport(this.files[0]); this.value=''">
+  </div>
+  <p class="backup__note">Un fichier suffit à tout retrouver. Firestore n'a pas de corbeille.</p>
 </div>
 
 </div>
@@ -493,7 +508,13 @@ const STORE_KEY  = 'energyData';
 const BACKUP_KEY = 'energyData_avant_fusion';
 
 function getData(){try{return JSON.parse(localStorage.getItem(STORE_KEY)||'{}')}catch(e){return {}}}
-function setData(d){localStorage.setItem(STORE_KEY,JSON.stringify(d))}
+/* Le cache local peut refuser d'écrire : quota plein, navigation privée, ou
+   stockage bloqué par le navigateur. Ce n'est pas une raison pour interrompre
+   la synchronisation, qui est la vraie source de vérité. On note et on continue. */
+function setData(d){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(d)); }
+  catch(e){ console.warn('[cache local] écriture impossible :', e); }
+}
 
 /* Écrit une seule branche de la journée, sans toucher à l'autre. C'est la
    fonction qui corrige l'écrasement décrit ci-dessus : ne jamais revenir à un
@@ -1233,6 +1254,64 @@ function dRender(){
    contact avec l'autre PC, qui la possède encore. Une date dont la pierre est
    plus récente que ses branches est considérée comme effacée partout, et le
    reste tant que rien de plus récent n'est écrit pour ce jour. */
+/* ═══ SAUVEGARDE ET RESTAURATION ════════════════════════════════════════════
+   Firestore n'a pas de corbeille : un document écrasé est perdu. Ces deux
+   boutons sont donc le seul filet réel du projet, et la raison pour laquelle
+   ils existent malgré la règle « le plus simple possible ». Un fichier posé sur
+   le disque ne dépend ni de Google, ni du navigateur, ni de moi. */
+
+function dExport(){
+  const contenu = JSON.stringify({
+    app: 'jauge-energie', version: 1,
+    exporte: new Date().toISOString(),
+    days: getData()
+  }, null, 2);
+  const url = URL.createObjectURL(new Blob([contenu], { type:'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = 'jauge-energie-' + todayStr() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ⚠️ La restauration RÉHORODATE tout ce qu'elle réinjecte, avec le même instant.
+   Sans ça elle ne servirait à rien dans le seul cas où on en a besoin : après
+   une suppression accidentelle, la pierre tombale serait plus récente que la
+   donnée du fichier et la fusion continuerait de l'effacer, ici comme sur les
+   autres machines. Réhorodater, c'est dire « cette version fait foi
+   maintenant », ce qui est exactement l'intention de celui qui restaure.
+   C'est aussi pourquoi il y a une confirmation : l'effet se propage partout. */
+function dImport(fichier){
+  if(!fichier) return;
+  const lecteur = new FileReader();
+  lecteur.onload = () => {
+    let brut;
+    try { brut = JSON.parse(lecteur.result); }
+    catch(e) { alert('Fichier illisible : ce n\'est pas du JSON valide.'); return; }
+
+    const jours = brut && brut.days ? brut.days : brut;
+    if(!jours || typeof jours !== 'object' || Array.isArray(jours)){
+      alert('Ce fichier ne contient pas de journées.'); return;
+    }
+
+    const t = maintenant();
+    const restaure = {};
+    Object.keys(jours).forEach(d=>{
+      const src = jours[d] || {}, dest = {};
+      ['morning','day'].forEach(b=>{ if(src[b] && typeof src[b]==='object') dest[b] = { ...src[b], at:t }; });
+      if(dest.morning || dest.day) restaure[d] = dest;
+    });
+
+    const n = Object.keys(restaure).length;
+    if(!n){ alert('Aucune journée exploitable dans ce fichier.'); return; }
+    if(!confirm(n + ' journée(s) vont être restaurées.\n\nElles prendront le pas sur ce qui existe, ici comme sur tes autres machines. Continuer ?')) return;
+
+    persist(mergeJours(getData(), restaure), true);
+    dRender();
+    alert(n + ' journée(s) restaurées.');
+  };
+  lecteur.readAsText(fichier);
+}
+
 function dDelete(date){
   if(!confirm('Supprimer le '+fmtDate(date)+' ? Matin et journée seront effacés.')) return;
   const data=getData();
