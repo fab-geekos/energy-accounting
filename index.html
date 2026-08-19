@@ -20,6 +20,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
         integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<!-- SDK Firebase en version « compat ». Elle expose un objet global `firebase`
+     utilisable depuis un script classique, là où la version « modular » exige
+     des modules ES. C'est le même choix que dans todo, et pour la même raison :
+     un index.html unique, sans étape de build.
+     Pas d'`integrity` ici, contrairement à Chart.js : Google ne publie pas
+     d'empreinte pour gstatic.com, et l'URL est déjà figée sur une version
+     précise, servie par Google lui-même. -->
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 
@@ -176,14 +187,65 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);line
 .del-btn{background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted);transition:color .2s}
 .del-btn:hover{color:var(--alert)}
 .no-data{text-align:center;padding:30px;color:var(--muted);font-size:14px}
+
+/* ── Porte de connexion ─────────────────────────────────────────────────────
+   Tant que Firebase n'a pas confirmé une session valide, l'app est masquée
+   derrière ce voile. Ce n'est PAS une mesure de sécurité, les données sont
+   protégées par les règles Firestore côté serveur : c'est seulement pour
+   éviter d'afficher une app vide et de laisser croire à une perte de données.
+   `hidden` a besoin du !important : n'importe quelle règle de classe posant
+   `display` le neutraliserait sans bruit. */
+[hidden]{display:none !important}
+.gate{
+  position:fixed;inset:0;z-index:100;display:grid;place-items:center;
+  background:var(--bg);padding:24px;text-align:center;
+}
+.gate__box{max-width:380px;display:grid;gap:14px;justify-items:center}
+.gate__title{font-family:'Newsreader',Georgia,serif;font-variation-settings:'opsz' 40;font-size:1.5rem;font-weight:600;line-height:1.3;color:var(--accent-text)}
+.gate__text{font-size:14px;color:var(--muted)}
+.gate__btn{
+  padding:12px 22px;border-radius:var(--radius);border:none;
+  font-family:'Outfit',sans-serif;font-size:15px;font-weight:600;cursor:pointer;
+  color:var(--on-accent);background:var(--accent);
+}
+.gate__btn:hover{opacity:.9}
+.gate__err{font-size:13px;color:var(--red-strong);font-weight:500}
+
+/* Pastille d'état de synchronisation, dans la barre haute. Discrète par
+   construction : elle ne doit se remarquer que lorsqu'elle signale un ennui. */
+.sync{font-size:11px;color:var(--muted);font-family:'Outfit',sans-serif;white-space:nowrap}
+.sync.is-error{color:var(--red-strong);font-weight:600}
 </style>
 </head>
 <body>
 <script>if(localStorage.getItem("energy_theme")==="dark")document.body.classList.add("dark");</script>
 
+<!-- Porte de connexion. Affichée par défaut : c'est Firebase qui l'ouvrira s'il
+     retrouve une session valide sur cet appareil, ce qui est le cas courant et
+     ne demande alors aucun clic. -->
+<div class="gate" id="gate">
+  <div class="gate__box">
+    <div class="gate__title">⚡ Jauge d'énergie</div>
+    <!-- Deux états. Au chargement on ne SAIT pas encore si une session existe :
+         Firebase met quelques centaines de millisecondes à la retrouver.
+         Afficher « Se connecter » pendant ce temps ferait clignoter un bouton
+         inutile à chaque ouverture, alors que le cas courant est d'être déjà
+         connecté. On affiche donc l'attente, et le bouton n'apparaît que
+         lorsque l'absence de session est confirmée. -->
+    <p class="gate__text" id="gateWait">Vérification de la session...</p>
+    <p class="gate__text" id="gateText" hidden>Tes jauges sont synchronisées entre tes ordinateurs. Connecte-toi avec ton compte Google pour y accéder.</p>
+    <button class="gate__btn" id="gateBtn" hidden>Se connecter avec Google</button>
+    <p class="gate__err" id="gateErr" hidden></p>
+  </div>
+</div>
+
 <header class="topbar">
   <span class="brand">⚡ Jauge d'énergie</span>
-  <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Changer de thème" title="Mode clair / sombre">🌙</button>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <span class="sync" id="syncState"></span>
+    <button class="icon-btn" id="signOutBtn" onclick="signOut()" aria-label="Se déconnecter" title="Se déconnecter" hidden>⏻</button>
+    <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Changer de thème" title="Mode clair / sombre">🌙</button>
+  </span>
 </header>
 
 <div class="container">
@@ -435,13 +497,47 @@ function setData(d){localStorage.setItem(STORE_KEY,JSON.stringify(d))}
 
 /* Écrit une seule branche de la journée, sans toucher à l'autre. C'est la
    fonction qui corrige l'écrasement décrit ci-dessus : ne jamais revenir à un
-   `data[date] = {...}` qui remplace l'objet entier. */
+   `data[date] = {...}` qui remplace l'objet entier.
+
+   ⚠️ Chaque branche porte son propre `at`, l'instant de son écriture. Ce n'est
+   pas décoratif : c'est ce qui permet de fusionner deux appareils sans perte
+   (cf. `mergeJours`). Une branche sans `at` est traitée comme infiniment
+   ancienne, ce qui est exactement le bon comportement pour les données écrites
+   avant l'arrivée de la synchronisation. */
+/* Horodatage qui ne recule jamais.
+
+   ⚠️ `Date.now()` est l'horloge LOCALE de la machine, et deux ordinateurs ne
+   sont jamais exactement à la même heure. Si le portable retarde de dix
+   minutes, une saisie faite dessus APRÈS celle du PC porterait une date
+   ANTÉRIEURE et perdrait l'arbitrage : la donnée la plus récente serait
+   silencieusement écartée.
+   On borne donc l'horodatage par tout ce qu'on a déjà vu passer, venu du
+   nuage comme du local. Une machine en retard adopte immédiatement le temps
+   de l'autre au lieu de réécrire dans le passé. C'est une horloge logique :
+   elle ne dit pas l'heure, elle dit l'ordre, et c'est tout ce dont la fusion
+   a besoin. */
+let horlogeVue = 0;
+
+function observerHorloge(data){
+  Object.values(data || {}).forEach(j=>{
+    if(!j) return;
+    horlogeVue = Math.max(horlogeVue, j.del || 0,
+      (j.morning && j.morning.at) || 0, (j.day && j.day.at) || 0);
+  });
+}
+
+function maintenant(){
+  const t = Math.max(Date.now(), horlogeVue + 1);
+  horlogeVue = t;
+  return t;
+}
+
 function saveToday(branche, valeur){
   const data = getData();
   const jour = data[todayStr()] || {};
-  jour[branche] = valeur;
+  jour[branche] = { ...valeur, at: maintenant() };
   data[todayStr()] = jour;
-  setData(data);
+  persist(data);
 }
 
 /* Conversion de l'ancien format vers le nouveau. Elle s'exécute une seule fois
@@ -475,6 +571,243 @@ function migrate(){
   });
   setData(data);
   console.info('Jauge d\'énergie : données converties au format matin/journée. Copie de l\'ancien format conservée sous « '+BACKUP_KEY+' ».');
+}
+
+/* ═══ SYNCHRONISATION FIREBASE ═══════════════════════════════════════════════
+
+   Modèle : un seul document, `users/{uid}/energy/state`, contenant l'objet des
+   journées sous la clé `days`. Un document plutôt qu'un par jour, parce que
+   l'app se charge alors en UNE lecture au lieu d'une par journée d'historique,
+   et qu'un document Firestore monte à 1 Mo, soit des décennies de jauges.
+
+   Le chemin commence par `users/{uid}` parce que c'est LUI qui rend la règle
+   de sécurité exprimable : le serveur compare l'uid du demandeur à celui du
+   chemin demandé. Aucune donnée d'un autre compte n'est atteignable, même en
+   trafiquant la page, puisque la règle s'exécute chez Google.
+
+   ⚠️ FUSION, ET NON « LE PLUS RÉCENT GAGNE ». C'est la différence importante
+   avec todo, dont la mémoire de projet note que le nuage écrase toujours le
+   local faute de réconciliation. Ici le multi-poste est la raison d'être du
+   projet : la jauge du matin est saisie à la maison, la journée est comptée au
+   bureau. Un écrasement global perdrait forcément l'une des deux. On fusionne
+   donc BRANCHE PAR BRANCHE, chacune gardant la version la plus récemment
+   écrite. Deux appareils qui remplissent des choses différentes le même jour
+   conservent les deux.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBsJkX8Buwqj2_biFsIYEaZK7adA5TvDDk",
+  authDomain: "energy-accounting-436bc.firebaseapp.com",
+  projectId: "energy-accounting-436bc",
+  storageBucket: "energy-accounting-436bc.firebasestorage.app",
+  messagingSenderId: "348122533335",
+  appId: "1:348122533335:web:c04eefaca952e6169ecf92"
+};
+
+/* Cette clé n'est PAS un secret, et il ne faut pas chercher à la cacher : elle
+   ne fait qu'adresser le bon projet Firebase. La protection réelle est la
+   règle Firestore, qui vit chez Google et exige à la fois une session
+   authentifiée, un uid correspondant au chemin, et cet email précis. */
+const ALLOWED_EMAIL = 'fabien.labbe.91@gmail.com';
+
+const DEBOUNCE_MS = 600;
+
+let fbAuth = null, fbStore = null, docRef = null, unsub = null;
+let ecritureDifferee = null, enAttente = null, dernierEtatConnu = null;
+
+/* Sérialisation à clés triées. Indispensable : deux objets identiques peuvent
+   sortir de `JSON.stringify` dans un ordre différent selon leur histoire, et
+   on comparerait alors du texte différent pour un contenu identique. Le nuage
+   et le local se renverraient la balle indéfiniment. */
+function stable(v){
+  if(v===null||typeof v!=='object') return JSON.stringify(v);
+  if(Array.isArray(v)) return '['+v.map(stable).join(',')+']';
+  return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}';
+}
+
+/* Fusion d'une seule journée. Pour chaque branche on garde la plus récemment
+   écrite ; une branche antérieure à la pierre tombale est considérée effacée. */
+function mergeJour(x, y){
+  x = x || {}; y = y || {};
+  const del = Math.max(x.del || 0, y.del || 0);
+  const res = {};
+  ['morning','day'].forEach(b=>{
+    const ax = (x[b] && x[b].at) || 0, ay = (y[b] && y[b].at) || 0;
+    const gagnant = ax >= ay ? x[b] : y[b];
+    if(!gagnant) return;
+    /* ⚠️ Le filtre de la pierre tombale ne s'applique QUE s'il y a une pierre.
+       Sans ce garde, une branche sans horodatage (`at` valant 0) était comparée
+       à un `del` valant 0 lui aussi, `0 > 0` était faux, et la branche
+       disparaissait : toutes les données écrites avant l'arrivée de la
+       synchronisation auraient été effacées à la première fusion. */
+    if(del && (gagnant.at || 0) <= del) return;
+    res[b] = gagnant;
+  });
+  if(del) res.del = del;
+  return (res.morning || res.day || res.del) ? res : null;
+}
+
+/* Fusion complète. Commutative et idempotente : fusionner deux fois donne le
+   même résultat, ce qui garantit que l'échange local/nuage s'arrête au lieu de
+   boucler. */
+function mergeJours(a, b){
+  const out = {};
+  new Set([...Object.keys(a||{}), ...Object.keys(b||{})]).forEach(date=>{
+    const j = mergeJour((a||{})[date], (b||{})[date]);
+    if(j) out[date] = j;
+  });
+  return out;
+}
+
+/* Point d'entrée unique de toute écriture : le local est servi tout de suite,
+   le nuage un peu plus tard. Le délai n'est pas de la paresse, il évite une
+   écriture réseau par clic quand on coche dix lignes d'affilée. */
+function persist(data, immediat){
+  setData(data);
+  if(!docRef) return;
+  enAttente = data;
+  clearTimeout(ecritureDifferee);
+  if(immediat) pousser();
+  else ecritureDifferee = setTimeout(pousser, DEBOUNCE_MS);
+}
+
+function pousser(){
+  clearTimeout(ecritureDifferee);
+  if(!docRef || !enAttente) return;
+  const data = enAttente; enAttente = null;
+  dernierEtatConnu = stable(data);
+  majSync('Enregistrement...');
+  /* ⚠️ `{merge:true}` n'est pas une optimisation, c'est une protection.
+     Un `set()` ordinaire REMPLACE le document entier. Scénario réel : le
+     portable est hors ligne, on y saisit quelque chose, et pendant ce temps le
+     PC du bureau enregistre sa journée. Au retour du réseau, l'écriture mise
+     en attente sur le portable, calculée sur une vue périmée du monde,
+     écraserait ce que le bureau vient d'écrire.
+     Avec `merge`, Firestore fusionne les cartes imbriquées clé par clé sur le
+     serveur : une date que le portable ne connaît pas n'est jamais touchée.
+     Corollaire assumé : une branche éteinte par une pierre tombale reste
+     physiquement dans le document. Elle est filtrée à la lecture par
+     `mergeJour`, donc invisible ; ce n'est que du poids mort, quelques octets. */
+  docRef.set({ days: data, _updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true })
+    .then(()=>majSync(''))
+    .catch(e=>{ console.warn('[firebase] ecriture :', e); majSync('Hors ligne', true); });
+}
+
+/* ⚠️ FILET ANTI-PERTE, repris de todo où son absence avait coûté des données.
+   Une modification faite dans les 600 ms qui précèdent la fermeture de
+   l'onglet n'atteindrait jamais le nuage, et la prochaine ouverture
+   ressusciterait l'ancienne version. On force donc l'envoi dès que la page
+   passe en arrière-plan ou s'apprête à disparaître. */
+addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') pousser(); });
+addEventListener('pagehide', pousser);
+
+function majSync(texte, erreur){
+  const el = document.getElementById('syncState');
+  if(!el) return;
+  el.textContent = texte;
+  el.classList.toggle('is-error', !!erreur);
+}
+
+/* Réception d'une version du nuage. */
+function surNuage(snap){
+  /* Écho de notre propre écriture, pas encore confirmée par le serveur :
+     l'appliquer ne ferait que rejouer ce qu'on vient d'envoyer. */
+  if(snap.metadata.hasPendingWrites) return;
+
+  const nuage = snap.exists ? (snap.data().days || {}) : null;
+  const local = getData();
+  /* L'horloge logique observe tout ce qui passe, y compris ce qui vient de
+     l'autre machine : c'est ainsi qu'un poste en retard se recale. */
+  observerHorloge(nuage); observerHorloge(local);
+
+  /* Document absent. On ne sème QUE sur une confirmation du serveur, jamais
+     depuis le cache hors ligne : un second appareil au cache vide écraserait
+     sinon un document déjà rempli par le premier. */
+  if(!nuage){
+    if(snap.metadata.fromCache) return;
+    if(Object.keys(local).length) persist(local, true);
+    return;
+  }
+
+  const fusion = mergeJours(nuage, local);
+  const sFusion = stable(fusion);
+
+  if(sFusion !== stable(local)){
+    setData(fusion);
+    rafraichirTout();
+  }
+  /* Le nuage ne connaît pas encore la fusion : on la lui envoie. Comme la
+     fusion est idempotente, l'écho qui reviendra sera identique et la boucle
+     s'arrêtera d'elle-même. */
+  if(sFusion !== stable(nuage) && sFusion !== dernierEtatConnu){
+    persist(fusion, true);
+  }
+}
+
+/* Après adoption d'une version venue d'ailleurs, les trois onglets doivent
+   refléter la nouvelle donnée sans que Fabien ait à recharger. */
+function rafraichirTout(){
+  jReprendreJaugeDuMatin();
+  if(document.getElementById('tab-donnees').classList.contains('active')) dRender();
+}
+
+function attacher(uid){
+  detacher();
+  docRef = fbStore.doc('users/'+uid+'/energy/state');
+  /* `includeMetadataChanges` est nécessaire pour distinguer « absent du cache »
+     de « absent, confirmé par le serveur », distinction dont dépend le semis
+     prudent ci-dessus. */
+  unsub = docRef.onSnapshot({ includeMetadataChanges: true }, surNuage,
+    e=>{ console.warn('[firebase] lecture :', e); majSync('Hors ligne', true); });
+}
+
+function detacher(){ if(unsub){ unsub(); unsub=null; } docRef=null; }
+
+function porte(ouverte){
+  document.getElementById('gate').hidden = ouverte;
+  document.getElementById('signOutBtn').hidden = !ouverte;
+  if(!ouverte){
+    /* Absence de session confirmée : on remplace l'attente par l'invitation. */
+    document.getElementById('gateWait').hidden = true;
+    document.getElementById('gateText').hidden = false;
+    document.getElementById('gateBtn').hidden = false;
+  }
+}
+
+function signOut(){ if(fbAuth) fbAuth.signOut(); }
+
+function demarrerFirebase(){
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fbStore = firebase.firestore();
+  /* Cache hors ligne. À appeler avant toute autre opération Firestore. Il
+     permet d'ouvrir l'app dans le train et de voir ses données, les écritures
+     partant au retour du réseau. */
+  fbStore.enablePersistence({ synchronizeTabs:true }).catch(()=>{});
+
+  fbAuth = firebase.auth();
+  fbAuth.onAuthStateChanged(user=>{
+    if(user && user.email === ALLOWED_EMAIL){
+      porte(true); majSync(''); attacher(user.uid);
+    } else if(user){
+      /* Compte Google valide mais pas le bon. La règle Firestore refuserait de
+         toute façon, on le dit clairement plutôt que de laisser une app vide. */
+      fbAuth.signOut();
+      erreurPorte('Ce compte Google n\'est pas autorisé sur cette application.');
+    } else {
+      detacher(); porte(false);
+    }
+  });
+
+  document.getElementById('gateBtn').addEventListener('click', ()=>{
+    document.getElementById('gateErr').hidden = true;
+    fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+      .catch(e=>erreurPorte('Connexion impossible : '+(e.code || e.message)));
+  });
+}
+
+function erreurPorte(msg){
+  const el = document.getElementById('gateErr');
+  el.textContent = msg; el.hidden = false;
 }
 
 /* ── Dates et couleurs, communs aux trois onglets ────────────────────────── */
@@ -895,9 +1228,17 @@ function dRender(){
   });
 }
 
+/* ⚠️ Une suppression ne retire PAS la date : elle pose une pierre tombale.
+   Sans elle, la fusion multi-appareils ressusciterait l'entrée au premier
+   contact avec l'autre PC, qui la possède encore. Une date dont la pierre est
+   plus récente que ses branches est considérée comme effacée partout, et le
+   reste tant que rien de plus récent n'est écrit pour ce jour. */
 function dDelete(date){
   if(!confirm('Supprimer le '+fmtDate(date)+' ? Matin et journée seront effacés.')) return;
-  const data=getData(); delete data[date]; setData(data); dRender();
+  const data=getData();
+  data[date]={ del: maintenant() };
+  persist(data, true);
+  dRender();
 }
 
 /* ═══ THÈME ══════════════════════════════════════════════════════════════════
@@ -922,11 +1263,15 @@ function toggleTheme(){setTheme(!document.body.classList.contains('dark'))}
    La conversion des données passe AVANT tout rendu : les onglets lisent le
    nouveau format et ne connaissent pas l'ancien. */
 migrate();
+observerHorloge(getData());   /* l'horloge logique repart d'où l'historique s'arrête */
 mRender();
 jRender();
 jReprendreJaugeDuMatin();
 setTheme(localStorage.getItem(THEME_KEY)==='dark');
 switchTab((location.hash||'#matin').slice(1), false);
+/* En dernier : l'app est entièrement utilisable sur le cache local avant même
+   que le réseau ait répondu. La synchronisation vient s'ajouter par-dessus. */
+demarrerFirebase();
 </script>
 </body>
 </html>
